@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RF Interceptor - Live Monitor</title>
+  <style>
+    /* -----------------------------------------------------------------------
+       Base styles
+    ----------------------------------------------------------------------- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0d1117;
+      --surface:    #161b22;
+      --surface2:   #21262d;
+      --border:     #30363d;
+      --accent:     #58a6ff;
+      --accent-dim: #1f6feb;
+      --green:      #3fb950;
+      --yellow:     #d29922;
+      --red:        #f85149;
+      --text:       #e6edf3;
+      --text-dim:   #8b949e;
+      --text-faint: #484f58;
+      --font-mono:  'Courier New', Courier, monospace;
+      --font-ui:    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --radius:     6px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* -----------------------------------------------------------------------
+       Layout
+    ----------------------------------------------------------------------- */
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -0.3px;
+    }
+
+    .logo span { color: var(--text-dim); font-weight: 400; font-size: 13px; }
+
+    .header-actions { display: flex; gap: 10px; margin-left: auto; align-items: center; }
+
+    .status-dot {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--text-faint);
+      display: inline-block;
+      margin-right: 6px;
+      transition: background 0.3s;
+    }
+    .status-dot.connected   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.scanning    { background: var(--yellow); box-shadow: 0 0 6px var(--yellow);
+                              animation: pulse 1s infinite; }
+    .status-dot.error       { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    #status-label { font-size: 13px; color: var(--text-dim); }
+
+    .main {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      grid-template-rows: 1fr;
+      overflow: hidden;
+    }
+
+    /* -----------------------------------------------------------------------
+       Left panel - stats and controls
+    ----------------------------------------------------------------------- */
+    .panel-left {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .panel-section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-section h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    /* -----------------------------------------------------------------------
+       Buttons
+    ----------------------------------------------------------------------- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      font-family: var(--font-ui);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent); }
+    .btn-primary:disabled { background: var(--surface2); border-color: var(--border);
+                             color: var(--text-faint); cursor: not-allowed; }
+
+    .btn-default {
+      background: var(--surface2);
+      color: var(--text);
+    }
+    .btn-default:hover { background: var(--border); }
+
+    .btn-danger {
+      background: transparent;
+      border-color: var(--red);
+      color: var(--red);
+    }
+    .btn-danger:hover { background: rgba(248,81,73,0.1); }
+
+    /* -----------------------------------------------------------------------
+       Stats cards
+    ----------------------------------------------------------------------- */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+    }
+
+    .stat-label { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+    .stat-value { font-size: 22px; font-weight: 700; color: var(--accent); font-family: var(--font-mono); }
+    .stat-value.green { color: var(--green); }
+
+    /* -----------------------------------------------------------------------
+       Channel heat map
+    ----------------------------------------------------------------------- */
+    .channel-map {
+      display: grid;
+      grid-template-columns: repeat(25, 1fr);
+      gap: 2px;
+    }
+
+    .ch-cell {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 2px;
+      background: var(--surface2);
+      border: 1px solid transparent;
+      cursor: default;
+      transition: background 0.3s;
+      position: relative;
+    }
+
+    .ch-cell:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #000;
+      color: var(--text);
+      font-size: 10px;
+      padding: 3px 6px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 100;
+      border: 1px solid var(--border);
+    }
+
+    .ch-cell.heat-1  { background: #1a3a1a; }
+    .ch-cell.heat-2  { background: #1e4a1e; }
+    .ch-cell.heat-3  { background: #235c23; }
+    .ch-cell.heat-4  { background: #286e28; }
+    .ch-cell.heat-5  { background: #2d802d; }
+    .ch-cell.heat-6  { background: #339433; }
+    .ch-cell.heat-7  { background: var(--green); }
+    .ch-cell.active  { border-color: var(--accent); }
+    .ch-cell.scan    { background: var(--accent-dim) !important; }
+
+    .ch-legend {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--text-dim);
+      align-items: center;
+    }
+
+    .ch-legend-swatch {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    /* -----------------------------------------------------------------------
+       Top channels list
+    ----------------------------------------------------------------------- */
+    .top-channel-row {
+      display: flex;
+      align-items: center;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+      font-size: 13px;
+    }
+
+    .top-channel-row:last-child { border-bottom: none; }
+
+    .tc-bar-wrap {
+      flex: 1;
+      height: 4px;
+      background: var(--surface2);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .tc-bar {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.5s;
+    }
+
+    .tc-num { font-family: var(--font-mono); color: var(--accent); min-width: 30px; }
+    .tc-freq { color: var(--text-dim); font-size: 11px; min-width: 70px; }
+    .tc-count { font-family: var(--font-mono); color: var(--green); min-width: 32px;
+                text-align: right; }
+
+    /* -----------------------------------------------------------------------
+       Right panel - packet log
+    ----------------------------------------------------------------------- */
+    .panel-right {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .log-toolbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .log-toolbar span { color: var(--text-dim); font-size: 12px; margin-left: auto; }
+
+    #packet-log {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+    }
+
+    .log-header, .log-row {
+      display: grid;
+      grid-template-columns: 60px 50px 55px 60px 50px 1fr;
+      padding: 6px 16px;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .log-header {
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-dim);
+      font-family: var(--font-ui);
+      border-bottom: 2px solid var(--border);
+      z-index: 10;
+    }
+
+    .log-row {
+      transition: background 0.2s;
+    }
+
+    .log-row:hover { background: var(--surface2); }
+
+    .log-row.new-row {
+      animation: flash 0.4s ease-out;
+    }
+
+    @keyframes flash {
+      from { background: rgba(88,166,255,0.15); }
+      to   { background: transparent; }
+    }
+
+    .col-time  { color: var(--text-dim); }
+    .col-ch    { color: var(--accent); font-weight: bold; }
+    .col-rssi  { color: var(--yellow); }
+    .col-len   { color: var(--text-dim); }
+    .col-src   { color: var(--green); }
+    .col-data  {
+      color: var(--text);
+      word-break: break-all;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .col-data .byte { margin-right: 3px; }
+    .col-data .byte-zero { color: var(--text-faint); }
+    .col-data .byte-high { color: var(--red); }
+    .col-data .byte-mid  { color: var(--yellow); }
+    .col-data .byte-low  { color: var(--green); }
+
+    /* -----------------------------------------------------------------------
+       Serial input bar at bottom
+    ----------------------------------------------------------------------- */
+    .serial-bar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .serial-bar label { font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+
+    #serial-input {
+      flex: 1;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 13px;
+      padding: 6px 10px;
+      outline: none;
+    }
+
+    #serial-input:focus { border-color: var(--accent); }
+    #serial-input::placeholder { color: var(--text-faint); }
+
+    /* -----------------------------------------------------------------------
+       Empty state / browser warning
+    ----------------------------------------------------------------------- */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 40px;
+    }
+
+    .empty-icon { font-size: 48px; opacity: 0.3; }
+    .empty-title { font-size: 16px; font-weight: 600; color: var(--text); }
+    .empty-sub   { font-size: 13px; max-width: 400px; line-height: 1.7; }
+
+    .warning-banner {
+      background: rgba(210,153,34,0.12);
+      border: 1px solid rgba(210,153,34,0.4);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 12.5px;
+      color: var(--yellow);
+      margin: 12px 0;
+      line-height: 1.6;
+    }
+
+    /* -----------------------------------------------------------------------
+       Scrollbar
+    ----------------------------------------------------------------------- */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+    /* -----------------------------------------------------------------------
+       Responsive collapse
+    ----------------------------------------------------------------------- */
+    @media (max-width: 800px) {
+      .main { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      .panel-left { border-right: none; border-bottom: 1px solid var(--border);
+                    max-height: 320px; }
+      .log-header, .log-row {
+        grid-template-columns: 50px 40px 55px 1fr;
+      }
+      .col-rssi, .col-src { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ====================================================================
+       HEADER
+  ==================================================================== -->
+  <header>
+    <div class="logo">
+      RF Interceptor
+      <span>2.4GHz Live Monitor</span>
+    </div>
+
+    <div id="browser-warn" class="warning-banner" style="display:none; margin:0; padding:6px 12px; font-size:12px;">
+      Web Serial requires Chrome or Edge. This page will not connect in Firefox or Safari.
+    </div>
+
+    <div class="header-actions">
+      <span>
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-label">Disconnected</span>
+      </span>
+      <button class="btn btn-primary" id="btn-connect">Connect to Device</button>
+      <button class="btn btn-default" id="btn-disconnect" disabled>Disconnect</button>
+    </div>
+  </header>
+
+  <!-- ====================================================================
+       MAIN
+  ==================================================================== -->
+  <div class="main">
+
+    <!-- LEFT PANEL -->
+    <div class="panel-left">
+
+      <!-- Stats -->
+      <div class="panel-section">
+        <h3>Session Statistics</h3>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Total Packets</div>
+            <div class="stat-value" id="stat-total">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Active Channels</div>
+            <div class="stat-value green" id="stat-channels">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Packets / sec</div>
+            <div class="stat-value" id="stat-pps">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Current CH</div>
+            <div class="stat-value" id="stat-cur-ch">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Channel heat map -->
+      <div class="panel-section">
+        <h3>Channel Activity Map  (0 - 124)</h3>
+        <div class="channel-map" id="channel-map"></div>
+        <div class="ch-legend">
+          <span class="ch-legend-swatch" style="background:#1a3a1a"></span> Low
+          <span class="ch-legend-swatch" style="background:var(--green)"></span> High
+          <span class="ch-legend-swatch" style="background:var(--accent-dim)"></span> Scanning
+        </div>
+      </div>
+
+      <!-- Top channels -->
+      <div class="panel-section">
+        <h3>Top 5 Channels</h3>
+        <div id="top-channels">
+          <div style="color:var(--text-faint); font-size:12px;">No data yet.</div>
+        </div>
+      </div>
+
+      <!-- Commands -->
+      <div class="panel-section">
+        <h3>Device Commands</h3>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <button class="btn btn-default" id="cmd-replay" disabled>Replay Last Packet</button>
+          <button class="btn btn-default" id="cmd-status" disabled>Print Device Status</button>
+          <button class="btn btn-danger"  id="cmd-clear">Clear Log</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL - Packet log -->
+    <div class="panel-right">
+      <div class="log-toolbar">
+        <strong style="font-size:13px;">Packet Log</strong>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); cursor:pointer;">
+          <input type="checkbox" id="chk-autoscroll" checked />
+          Auto-scroll
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); cursor:pointer;">
+          <input type="checkbox" id="chk-hex" checked />
+          Hex display
+        </label>
+        <span id="log-count">0 entries</span>
+      </div>
+
+      <div class="log-header">
+        <span>Time</span>
+        <span>CH</span>
+        <span>RSSI</span>
+        <span>Len</span>
+        <span>Source</span>
+        <span>Data</span>
+      </div>
+
+      <div id="packet-log">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-icon">--</div>
+          <div class="empty-title">No packets captured yet</div>
+          <div class="empty-sub">
+            Connect your RF Interceptor device using the button above, then power
+            on the device. Packets will appear here as they are captured. Make
+            sure you are using Chrome or Edge for Web Serial to work.
+          </div>
+        </div>
+      </div>
+
+      <!-- Serial input -->
+      <div class="serial-bar">
+        <label for="serial-input">Send to device:</label>
+        <input type="text" id="serial-input" placeholder="Type a command and press Enter  (h = help, r = replay, s = status)" disabled />
+        <button class="btn btn-default" id="btn-send" disabled>Send</button>
+      </div>
+    </div>
+
+  </div><!-- .main -->
+
+</div><!-- .app -->
+
+<!-- ============================================================
+     JAVASCRIPT
+============================================================ -->
+<script>
+'use strict';
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+  port:           null,
+  reader:         null,
+  writer:         null,
+  connected:      false,
+  totalPackets:   0,
+  activeChannels: new Set(),
+  channelCounts:  new Array(125).fill(0),
+  packetRate:     0,
+  recentPackets:  0,   // counted in the last second
+  currentScanCh:  0,
+  logEntries:     0,
+  maxLogEntries:  500,
+};
+
+// ---------------------------------------------------------------------------
+// DOM references
+// ---------------------------------------------------------------------------
+const dom = {
+  statusDot:    document.getElementById('status-dot'),
+  statusLabel:  document.getElementById('status-label'),
+  btnConnect:   document.getElementById('btn-connect'),
+  btnDisconn:   document.getElementById('btn-disconnect'),
+  btnSend:      document.getElementById('btn-send'),
+  cmdReplay:    document.getElementById('cmd-replay'),
+  cmdStatus:    document.getElementById('cmd-status'),
+  cmdClear:     document.getElementById('cmd-clear'),
+  serialInput:  document.getElementById('serial-input'),
+  packetLog:    document.getElementById('packet-log'),
+  emptyState:   document.getElementById('empty-state'),
+  statTotal:    document.getElementById('stat-total'),
+  statChannels: document.getElementById('stat-channels'),
+  statPps:      document.getElementById('stat-pps'),
+  statCurCh:    document.getElementById('stat-cur-ch'),
+  channelMap:   document.getElementById('channel-map'),
+  topChannels:  document.getElementById('top-channels'),
+  logCount:     document.getElementById('log-count'),
+  chkAutoscroll:document.getElementById('chk-autoscroll'),
+  chkHex:       document.getElementById('chk-hex'),
+  browserWarn:  document.getElementById('browser-warn'),
+};
+
+// ---------------------------------------------------------------------------
+// Browser check
+// ---------------------------------------------------------------------------
+if (!('serial' in navigator)) {
+  dom.browserWarn.style.display = 'block';
+  dom.btnConnect.disabled = true;
+  dom.btnConnect.textContent = 'Web Serial Not Supported';
+}
+
+// ---------------------------------------------------------------------------
+// Build the channel heat map cells on page load
+// ---------------------------------------------------------------------------
+(function buildChannelMap() {
+  for (let ch = 0; ch < 125; ch++) {
+    const cell = document.createElement('div');
+    cell.className = 'ch-cell';
+    cell.id = 'ch-' + ch;
+    cell.dataset.tip = 'CH ' + ch + ' (' + (2400 + ch) + ' MHz)';
+    dom.channelMap.appendChild(cell);
+  }
+})();
+
+// ---------------------------------------------------------------------------
+// Connect / Disconnect
+// ---------------------------------------------------------------------------
+dom.btnConnect.addEventListener('click', async () => {
+  if (!('serial' in navigator)) return;
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    state.port = port;
+    state.connected = true;
+
+    setStatus('connected', 'Connected');
+    dom.btnConnect.disabled = true;
+    dom.btnDisconn.disabled = false;
+    dom.serialInput.disabled = false;
+    dom.btnSend.disabled = false;
+    dom.cmdReplay.disabled = false;
+    dom.cmdStatus.disabled = false;
+
+    const encoder = new TextEncoderStream();
+    encoder.readable.pipeTo(port.writable);
+    state.writer = encoder.writable.getWriter();
+
+    startReading();
+  } catch (err) {
+    setStatus('error', 'Connection failed');
+    console.error(err);
+  }
+});
+
+dom.btnDisconn.addEventListener('click', disconnect);
+
+async function disconnect() {
+  state.connected = false;
+  try { state.reader && await state.reader.cancel(); } catch (_) {}
+  try { state.writer && await state.writer.close(); } catch (_) {}
+  try { state.port && await state.port.close(); } catch (_) {}
+  state.port = state.reader = state.writer = null;
+
+  setStatus('', 'Disconnected');
+  dom.btnConnect.disabled = false;
+  dom.btnDisconn.disabled = true;
+  dom.serialInput.disabled = true;
+  dom.btnSend.disabled = true;
+  dom.cmdReplay.disabled = true;
+  dom.cmdStatus.disabled = true;
+}
+
+// ---------------------------------------------------------------------------
+// Read serial data
+// ---------------------------------------------------------------------------
+async function startReading() {
+  const decoder = new TextDecoderStream();
+  state.port.readable.pipeTo(decoder.writable);
+  state.reader = decoder.readable.getReader();
+
+  let buffer = '';
+  try {
+    while (state.connected) {
+      const { value, done } = await state.reader.read();
+      if (done) break;
+      buffer += value;
+
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // Keep the incomplete last line
+
+      for (const line of lines) {
+        processLine(line.trim());
+      }
+    }
+  } catch (err) {
+    if (state.connected) {
+      setStatus('error', 'Read error');
+      console.error(err);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Parse a line from the serial monitor
+// ---------------------------------------------------------------------------
+function processLine(line) {
+  if (!line) return;
+
+  // Match packet lines: [PKT] CH:xx  RSSI:-xx  LEN:xx  DATA: xx xx xx ...
+  const pktMatch = line.match(/\[PKT\]\s+CH:(\d+)\s+RSSI:(-?\d+)\s+LEN:(\d+)\s+DATA:\s+([\dA-Fa-f ]+)/);
+
+  if (pktMatch) {
+    const ch     = parseInt(pktMatch[1]);
+    const rssi   = parseInt(pktMatch[2]);
+    const len    = parseInt(pktMatch[3]);
+    const hexStr = pktMatch[4].trim();
+    const bytes  = hexStr.split(/\s+/).filter(Boolean);
+
+    state.totalPackets++;
+    state.recentPackets++;
+    state.activeChannels.add(ch);
+    state.channelCounts[ch]++;
+    state.currentScanCh = ch;
+
+    appendPacketRow(ch, rssi, len, bytes);
+    updateChannelCell(ch);
+    updateStats();
+    return;
+  }
+
+  // STATUS line: [STATUS] Current channel: xx
+  const chMatch = line.match(/Current channel:\s*(\d+)/);
+  if (chMatch) {
+    state.currentScanCh = parseInt(chMatch[1]);
+    highlightScanChannel(state.currentScanCh);
+    dom.statCurCh.textContent = state.currentScanCh;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Append a row to the packet log
+// ---------------------------------------------------------------------------
+function appendPacketRow(ch, rssi, len, bytes) {
+  if (dom.emptyState) { dom.emptyState.remove(); }
+
+  // Limit log size to avoid performance issues
+  state.logEntries++;
+  while (state.logEntries > state.maxLogEntries) {
+    const first = dom.packetLog.querySelector('.log-row');
+    if (first) { first.remove(); state.logEntries--; }
+    else break;
+  }
+
+  const now = new Date();
+  const ts = String(now.getHours()).padStart(2,'0') + ':' +
+             String(now.getMinutes()).padStart(2,'0') + ':' +
+             String(now.getSeconds()).padStart(2,'0');
+
+  const sourceAddr = bytes.length >= 5
+    ? bytes.slice(0, 5).join(':')
+    : 'n/a';
+
+  const row = document.createElement('div');
+  row.className = 'log-row new-row';
+
+  // Data bytes with color coding based on value
+  let dataHtml = '';
+  bytes.forEach(b => {
+    const val = parseInt(b, 16);
+    let cls = 'byte';
+    if (val === 0)       cls += ' byte-zero';
+    else if (val >= 0xC0) cls += ' byte-high';
+    else if (val >= 0x80) cls += ' byte-mid';
+    else                  cls += ' byte-low';
+    dataHtml += `<span class="${cls}">${b.toUpperCase()}</span>`;
+  });
+
+  row.innerHTML = `
+    <span class="col-time">${ts}</span>
+    <span class="col-ch">${ch}</span>
+    <span class="col-rssi">${rssi}</span>
+    <span class="col-len">${len}</span>
+    <span class="col-src">${sourceAddr}</span>
+    <span class="col-data">${dataHtml}</span>
+  `;
+
+  dom.packetLog.appendChild(row);
+  dom.logCount.textContent = state.logEntries + ' entries';
+
+  if (dom.chkAutoscroll.checked) {
+    dom.packetLog.scrollTop = dom.packetLog.scrollHeight;
+  }
+
+  setTimeout(() => row.classList.remove('new-row'), 400);
+}
+
+// ---------------------------------------------------------------------------
+// Update channel heat map cell
+// ---------------------------------------------------------------------------
+let lastScanCell = null;
+
+function updateChannelCell(ch) {
+  const cell = document.getElementById('ch-' + ch);
+  if (!cell) return;
+
+  const count = state.channelCounts[ch];
+  const maxCount = Math.max(...state.channelCounts);
+  const ratio = maxCount > 0 ? count / maxCount : 0;
+
+  cell.className = 'ch-cell active';
+  if      (ratio > 0.85) cell.classList.add('heat-7');
+  else if (ratio > 0.70) cell.classList.add('heat-6');
+  else if (ratio > 0.55) cell.classList.add('heat-5');
+  else if (ratio > 0.40) cell.classList.add('heat-4');
+  else if (ratio > 0.25) cell.classList.add('heat-3');
+  else if (ratio > 0.10) cell.classList.add('heat-2');
+  else                   cell.classList.add('heat-1');
+}
+
+function highlightScanChannel(ch) {
+  if (lastScanCell) lastScanCell.classList.remove('scan');
+  const cell = document.getElementById('ch-' + ch);
+  if (cell && !cell.classList.contains('active')) {
+    cell.classList.add('scan');
+    lastScanCell = cell;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update stats display
+// ---------------------------------------------------------------------------
+function updateStats() {
+  dom.statTotal.textContent    = state.totalPackets;
+  dom.statChannels.textContent = state.activeChannels.size;
+  dom.statPps.textContent      = state.packetRate.toFixed(1);
+  dom.statCurCh.textContent    = state.currentScanCh;
+
+  // Top 5 channels
+  const sorted = state.channelCounts
+    .map((cnt, ch) => ({ ch, cnt }))
+    .filter(x => x.cnt > 0)
+    .sort((a, b) => b.cnt - a.cnt)
+    .slice(0, 5);
+
+  const maxCnt = sorted.length > 0 ? sorted[0].cnt : 1;
+
+  if (sorted.length === 0) {
+    dom.topChannels.innerHTML = '<div style="color:var(--text-faint); font-size:12px;">No data yet.</div>';
+    return;
+  }
+
+  dom.topChannels.innerHTML = sorted.map(({ ch, cnt }) => `
+    <div class="top-channel-row">
+      <span class="tc-num">${ch}</span>
+      <span class="tc-freq">${2400 + ch} MHz</span>
+      <div class="tc-bar-wrap">
+        <div class="tc-bar" style="width:${(cnt / maxCnt * 100).toFixed(1)}%"></div>
+      </div>
+      <span class="tc-count">${cnt}</span>
+    </div>
+  `).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Packet rate counter - updates every second
+// ---------------------------------------------------------------------------
+setInterval(() => {
+  state.packetRate = state.recentPackets;
+  state.recentPackets = 0;
+  if (state.connected) dom.statPps.textContent = state.packetRate;
+}, 1000);
+
+// ---------------------------------------------------------------------------
+// Send serial command
+// ---------------------------------------------------------------------------
+async function sendCommand(cmd) {
+  if (!state.writer || !state.connected) return;
+  try {
+    await state.writer.write(cmd + '\n');
+  } catch (err) {
+    console.error('Send error:', err);
+  }
+}
+
+dom.btnSend.addEventListener('click', () => {
+  const val = dom.serialInput.value.trim();
+  if (val) { sendCommand(val); dom.serialInput.value = ''; }
+});
+
+dom.serialInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') dom.btnSend.click();
+});
+
+dom.cmdReplay.addEventListener('click', () => sendCommand('r'));
+dom.cmdStatus.addEventListener('click', () => sendCommand('s'));
+
+dom.cmdClear.addEventListener('click', () => {
+  dom.packetLog.innerHTML = '';
+  state.logEntries = 0;
+  dom.logCount.textContent = '0 entries';
+});
+
+// ---------------------------------------------------------------------------
+// Status helper
+// ---------------------------------------------------------------------------
+function setStatus(type, label) {
+  dom.statusDot.className = 'status-dot ' + type;
+  dom.statusLabel.textContent = label;
+}
+
+// ---------------------------------------------------------------------------
+// Demo mode - simulate packets if not connected
+// (Remove or comment out the block below for production use)
+// ---------------------------------------------------------------------------
+function startDemo() {
+  setStatus('scanning', 'Demo mode (no device connected)');
+  dom.statCurCh.textContent = '0';
+
+  const CHANNELS = [2, 25, 40, 60, 77, 80, 83, 96, 100, 110];
+  let scanCh = 0;
+
+  setInterval(() => {
+    // Simulate the scanner sweeping channels
+    scanCh = (scanCh + 1) % 125;
+    highlightScanChannel(scanCh);
+    dom.statCurCh.textContent = scanCh;
+  }, 30);
+
+  setInterval(() => {
+    // Simulate a random packet
+    const ch  = CHANNELS[Math.floor(Math.random() * CHANNELS.length)];
+    const len = 8 + Math.floor(Math.random() * 24);
+    const rssi = -(40 + Math.floor(Math.random() * 50));
+    const bytes = [];
+    for (let i = 0; i < len; i++) {
+      bytes.push(Math.floor(Math.random() * 256).toString(16).padStart(2, '0'));
+    }
+
+    state.totalPackets++;
+    state.recentPackets++;
+    state.activeChannels.add(ch);
+    state.channelCounts[ch]++;
+    state.currentScanCh = ch;
+
+    appendPacketRow(ch, rssi, len, bytes);
+    updateChannelCell(ch);
+    updateStats();
+  }, 400 + Math.random() * 800);
+}
+
+// Auto-start demo if Web Serial is not available
+// so people can see the interface without hardware
+if (!('serial' in navigator)) {
+  startDemo();
+}
+</script>
+</body>
+</html>
