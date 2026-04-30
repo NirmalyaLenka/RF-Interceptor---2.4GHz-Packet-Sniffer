@@ -43,6 +43,8 @@ Total estimated cost: $20 to $45 depending on where you buy.
 
 Important note about the NRF24L01 modules: Buy the version labeled "NRF24L01 + PA + LNA with SMA antenna". This version has a power amplifier and a low-noise amplifier built in, which gives much better range. The tiny board-only version without the external antenna is less reliable. 
 <img width="362" height="241" alt="image" src="https://github.com/user-attachments/assets/117580a4-0350-4420-b1ea-d30108fdf92c" />
+ 
+ <img width="336" height="234" alt="image" src="https://github.com/user-attachments/assets/ab355bba-99f9-4e99-8742-ce3222dac94e" />
 
 ---
 
