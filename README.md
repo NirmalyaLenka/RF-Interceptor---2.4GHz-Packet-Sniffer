@@ -2,7 +2,7 @@
 
 This project turns an ESP32 microcontroller and two NRF24L01 radio modules into a portable 2.4GHz RF packet sniffer and interceptor. One module listens and captures packets across all 125 radio channels, and the second module can replay or re-transmit those captured packets. All captured data is streamed to your computer over USB serial or to a phone over Bluetooth.
 
-This is a learning project. It is meant to help you understand how wireless communication works at the packet level.
+This is a learning project. It is meant to help you understand how wireless communication works at the packet level.( illegal use can warm your butt)
 
 ---
 
