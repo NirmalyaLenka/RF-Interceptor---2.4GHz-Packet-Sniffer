@@ -196,6 +196,37 @@ MIT License. See LICENSE file for details.
 
 ---
 
+## Skills & technologies
+
+`Arduino/C++` · `C/C++` · `HTML/CSS`
+
+
+## Repository structure
+
+Key files and folders (not exhaustive):
+
+- `LICENSE`
+- `README.md`
+- `TROUBLESHOOTING.md`
+- `ble_server.cpp`
+- `ble_server.h`
+- `config.h`
+- `how_it_works.md`
+- `index.html`
+- `main.cpp`
+- `nrf_handler.cpp`
+- `nrf_handler.h`
+- `parts_list.md`
+- `platformio.ini`
+- `rf_interceptor(for ardino uno).ino`
+- `wiring.md`
+
+
+## How it works
+
+The main firmware sketch is `rf_interceptor(for ardino uno).ino`. Open it in Arduino IDE, verify the board, pin mapping and library requirements, then compile and upload. Test hardware behaviour on the real circuit before relying on it.
+
+
 ## Maintenance & Audit
 
 - **Audit date:** 10 November 2026
