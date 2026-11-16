@@ -6,16 +6,15 @@ This is a learning project. It is meant to help you understand how wireless comm
 
 ---
 
-## What This Device Does
+## What this prototype actually does
 
-- Scans all 125 channels in the 2.4GHz band (the same band used by WiFi, Bluetooth, and many wireless gadgets)
-- Captures raw radio packets from NRF24-based devices nearby
-- Logs each packet with its channel number and signal strength
-- Can replay a captured packet using the second NRF module
-- Sends all captured data to your browser or serial monitor in real time
-- Runs on a single 3.7V LiPo battery for several hours
+This is an experimental ESP32 project using two NRF24L01 radios. It cycles through NRF24 channel numbers 0–124, reports carrier activity, and can receive packets that match the radio address configured in the firmware. Captured results are printed to Serial Monitor and can be sent to a connected BLE client.
 
----
+Important limits:
+
+- This is **not** a general-purpose 2.4 GHz, Wi-Fi, or Bluetooth packet sniffer. NRF24 hardware filters packets by address; the code's carrier-detect result is not the same as decoding a packet.
+- The firmware includes a replay capability for controlled lab experiments. Use it only with devices you own or have explicit permission to test. Do not target locks, alarms, vehicle systems, access controls, or other third-party equipment.
+- Battery runtime, radio range, capture rate, and hardware reliability have not been measured for this repository.
 
 ## Who This Is For
 
@@ -80,44 +79,30 @@ Place a 100uF capacitor between the VCC and GND pins of each NRF module. Put the
 
 ---
 
-## Software Setup
+## Software setup
 
-### Step 1 - Install Arduino IDE
+The repository contains two firmware forms. The checked-in filenames and layout are not a standard PlatformIO source tree, so use one of the local-copy workflows below. No tracked files need to be renamed or moved.
 
-Go to https://www.arduino.cc/en/software and download the Arduino IDE for your operating system. Install it like any normal program.
+### Option A — Arduino IDE single-file sketch
 
-### Step 2 - Add ESP32 Board Support
+1. Create a local sketch folder named `rf_interceptor`.
+2. Copy `rf_interceptor(for ardino uno).ino` into it as `rf_interceptor.ino`. This is a local working copy; despite the original filename, the sketch targets an **ESP32**, not an Arduino Uno.
+3. Install ESP32 board support from Espressif Systems and install the `RF24` library by TMRh20.
+4. Select an ESP32 board matching your hardware (the guide assumes **ESP32 Dev Module**) and the correct serial port.
+5. Compile and upload, then open Serial Monitor at **115200 baud**.
 
-1. Open Arduino IDE
-2. Go to File > Preferences
-3. In the box that says "Additional boards manager URLs", paste this link:
-   `https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json`
-4. Click OK
-5. Go to Tools > Board > Boards Manager
-6. Search for "esp32" and install the package by Espressif Systems
-7. Wait for it to finish downloading (it may take a few minutes)
+### Option B — PlatformIO multi-file firmware
 
-### Step 3 - Install the RF24 Library
+The root `platformio.ini` declares the build environment, but the multi-file source and headers are currently at the repository root. PlatformIO's default build expects source files under `src/`, so the checked-in layout is not ready for a direct root-level build.
 
-1. In Arduino IDE, go to Sketch > Include Library > Manage Libraries
-2. Search for "RF24"
-3. Install the library by TMRh20 (make sure it is by TMRh20, not another author)
-4. Also search for "RF24Network" and install that too
+In a separate local build copy, keep `platformio.ini` at the root and place these files under `src/`:
 
-### Step 4 - Select Your Board
+- `main.cpp`
+- `config.h`
+- `nrf_handler.cpp` and `nrf_handler.h`
+- `ble_server.cpp` and `ble_server.h`
 
-1. Go to Tools > Board > esp32 > ESP32 Dev Module
-2. Go to Tools > Port and select the COM port your ESP32 is connected to
-   (on Windows it will be something like COM3 or COM4, on Mac it will be /dev/cu.usbserial-something)
-
-### Step 5 - Upload the Code
-
-1. Open the file `src/main.cpp` from this project
-2. If you are using the Arduino IDE (not PlatformIO), rename it to `rf_interceptor.ino` and open that
-3. Click the Upload button (the right arrow icon)
-4. Wait for it to say "Done uploading"
-
----
+Then run `pio run` to build, `pio run --target upload` to flash, and `pio device monitor -b 115200` to view serial output. These steps describe the expected PlatformIO layout; the firmware was not compiled during this review.
 
 ## How to Use It
 
@@ -130,7 +115,7 @@ Go to https://www.arduino.cc/en/software and download the Arduino IDE for your o
 
 ### Web Interface
 
-Open the file `demo/index.html` in your browser. This file connects to the ESP32 over Web Serial (Chrome and Edge only) and shows you a live channel activity map. You can see which channels have traffic and view the raw packet bytes.
+Serve the root-level `index.html` from a local HTTP server (for example, run `python -m http.server 8000` in a local copy and open `http://localhost:8000/`). The page uses Web Serial, so use a compatible Chromium-based browser and grant access to the ESP32 serial port. This file connects to the ESP32 over Web Serial (Chrome and Edge only) and shows you a live channel activity map. You can see which channels have traffic and view the raw packet bytes.
 
 ### LED Status Indicators
 
@@ -138,94 +123,58 @@ If you add an LED to GPIO 2 (the built-in LED on most ESP32 boards), it will bli
 
 ---
 
-## Project File Structure
+## Actual repository structure
 
-```
-rf-interceptor/
-├── README.md              <- You are reading this
-├── TROUBLESHOOTING.md     <- Fix common problems here
-├── HARDWARE.md            <- Detailed hardware notes
-├── platformio.ini         <- PlatformIO build config (optional)
-├── .gitignore             <- Files Git should ignore
-├── src/
-│   ├── main.cpp           <- Main program code
-│   ├── config.h           <- Settings you can change
-│   ├── nrf_handler.h      <- NRF module header
-│   ├── nrf_handler.cpp    <- NRF module logic
-│   ├── ble_server.h       <- Bluetooth server header
-│   └── ble_server.cpp     <- Bluetooth server logic
-├── hardware/
-│   ├── wiring.md          <- Step by step wiring guide
-│   └── parts_list.md      <- Full parts list with links
-├── demo/
-│   └── index.html         <- Browser-based live monitor
-└── docs/
-    └── how_it_works.md    <- Theory of operation
-```
+All of the following files are at the repository root:
 
----
+| File | Purpose |
+|---|---|
+| `main.cpp` | Multi-file firmware entry point |
+| `config.h` | Pin, channel, dwell-time, and BLE settings for the multi-file version |
+| `nrf_handler.cpp`, `nrf_handler.h` | NRF24 scanner/transmitter logic |
+| `ble_server.cpp`, `ble_server.h` | BLE service and packet notifications |
+| `rf_interceptor(for ardino uno).ino` | Separate single-file ESP32 sketch; the filename is misleading |
+| `platformio.ini` | PlatformIO environment and declared libraries |
+| `index.html` | Browser interface using Web Serial |
+| `wiring.md` | Wiring guide |
+| `parts_list.md` | Parts list |
+| `how_it_works.md` | Protocol and design explanation |
+| `TROUBLESHOOTING.md` | Troubleshooting notes |
+| `LICENSE` | License text |
+
+There are no `src/`, `hardware/`, or `demo/` directories in the current tree. Use the actual root-level paths above.
 
 ## Troubleshooting
 
-See the full `TROUBLESHOOTING.md` file for detailed help. Here are the most common problems:
+- **NRF module not detected:** check CE/CSN wiring, 3.3 V supply stability, common ground, and the capacitor placement described in `wiring.md`.
+- **Repeated resets:** the PA/LNA radios can have current spikes. Verify the supply can handle the modules and keep decoupling capacitors close to their power pins.
+- **No full packets:** see the address-filtering limitation above and `how_it_works.md`; do not interpret carrier activity as decoded traffic.
+- **Garbled serial output:** use 115200 baud.
+- **Browser cannot connect:** use a compatible Chromium-based browser, serve `index.html` from localhost, and grant Web Serial access to the correct port.
 
-**NRF module not detected**
-Almost always caused by missing capacitors or wrong wiring. Double-check every wire against the diagram above.
+## Authorized-use and safety notice
 
-**Garbled output in serial monitor**
-Make sure your serial monitor baud rate is set to 115200.
-
-**No packets captured**
-Try moving the device close to a known NRF device. The scanner cycles through all channels so it may take a few seconds to reach the right one.
-
-**ESP32 keeps crashing or rebooting**
-This usually means the battery or USB port cannot supply enough current. The NRF PA+LNA modules draw up to 115mA each. Make sure your power supply can handle at least 500mA total.
-
----
-
-## Legal Notice
-
-This tool is for educational purposes and authorized testing only. Intercepting wireless communications you do not own or have permission to test may be illegal in your country. Always get permission before using this device on any network or device you do not own.
-
----
+Use the device only for controlled testing of radios and receivers you own or are authorized to assess. Do not capture or replay communications to interfere with other people's devices or bypass access-control systems. Follow local radio and privacy laws. The project is experimental and has not been validated as a security-testing instrument.
 
 ## License
 
-MIT License. See LICENSE file for details.
-
-
----
+See the root-level `LICENSE` file.
 
 ## Skills & technologies
 
-`Arduino/C++` · `C/C++` · `HTML/CSS`
-
-
-## Repository structure
-
-Key files and folders (not exhaustive):
-
-- `LICENSE`
-- `README.md`
-- `TROUBLESHOOTING.md`
-- `ble_server.cpp`
-- `ble_server.h`
-- `config.h`
-- `how_it_works.md`
-- `index.html`
-- `main.cpp`
-- `nrf_handler.cpp`
-- `nrf_handler.h`
-- `parts_list.md`
-- `platformio.ini`
-- `rf_interceptor(for ardino uno).ino`
-- `wiring.md`
-
+`Arduino/C++` · `HTML/CSS` · `ESP32` · `NRF24L01` · `BLE`
 
 ## How it works
 
-The main firmware sketch is `rf_interceptor(for ardino uno).ino`. Open it in Arduino IDE, verify the board, pin mapping and library requirements, then compile and upload. Test hardware behaviour on the real circuit before relying on it.
+The multi-file implementation starts at `main.cpp`; the separate Arduino IDE implementation is `rf_interceptor(for ardino uno).ino`. The scanner uses carrier detection and address-filtered NRF24 reception across the configured channel range. The implementation is not a promiscuous Wi-Fi/Bluetooth receiver. Review `how_it_works.md` for the project's stated design details.
 
+## Maintenance & Audit
+
+- **Audit date:** 11 November 2026
+- **Documentation status:** README reviewed and audit record added on this date.
+- **Scope and evidence:** This is a documentation-level maintenance pass. It does not establish that source code compiles, dependencies are current, security has been tested, or hardware/runtime behavior has been verified.
+- **Code and tests:** No new functional code changes or test results are claimed by this README update. Run project-specific build, test, and hardware/runtime checks before relying on the project.
+- **Maintenance baseline:** Documentation status recorded through 11 November 2026; revisit setup instructions, dependencies, known limitations, and tests when the project changes.
 
 ## Maintenance & Audit
 
